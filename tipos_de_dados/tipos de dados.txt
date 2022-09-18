@@ -1,0 +1,51 @@
+# // Tipos de dados Prometheus
+ 
+Neste documento vamos explicar 4 tipos de dados e métricas do Prometheus
+
+
+gauge: Medidor
+O nome já dá uma dica, este tipo de dado é ideal para criar uma métrica cujo o valor se modifique tanto para cima ou para baixo, 
+como a temperatura da sua casa ou do seu componente do PC, o uso de mémoria no seu sistema e etc...
+Ex: memory_usage{instance="localhost:8899",job="Primeiro Exporter"}
+ 
+
+
+counter: Contador
+Outro tipo de dado que o nome ajuda muito a entender a sua função, utilizado em métricas que vai ser incrementada no decorrer do tempo, 
+por exemplo, quando eu quero contar o número de acesssos da minha aplicação ou até mesmo erros específicos. 
+Temos que tomar cuidado pois o valor atual do counter quase nunca é importante, 
+pois eles apenas fazem sentido quando analizamos ele em uma janela de tempo.
+
+Voltando o exemplo da nossa aplicação, se eu pegar apenas o número de acessos vamos sempre ter o total absoluto o que não nos diz muito,
+mas se por exemplo filtramors essa métrica para a última hora por exemplo, teremos um dado muito mais interessante para analizar.
+Assim podemos identificar períodos de pico de acesso e etc...
+Ex: requests_total{instance="localhost:8899",job="Primeiro Exporter"}
+ 
+
+
+histogram: Histograma
+Este é mais complicado, ele consiste em um sistema de buckets, que são baldes com valores pré definidos por um "LE" que no máximo pode ser 10 segundos.
+Então o que fazemos é configurar cada balde com um range de tempo especíco.
+
+Ex:
+Balde 1, LE de 0s - 0.5s, Balde 2 com um LE de 0.6 - 1.5s, Balde 3 com um LE de 1.6s - 3s e assim em diante
+
+O Prometheus irá pecorrer a "observations" aonde ele todos os nossos dados, e vai saber aonde colocar cada item,
+de acordo com o seu respectivo balde.
+
+Isto é ideal para quando você tem uma aplicação e quer saber o tempo de resposta do seu sistema,
+com esses baldes o Prometheus agrupa os dados de forma rápida te trazendo essa resposta naquele range estipulados nos baldes.
+
+ 
+
+summary: Resumo
+O summary tem uma lógica parecida com o histogram, a diferença que os buckets, aqui chamados de quantiles, 
+e são valores variam entre 0 e 1. A diferença é que esses valores não são de tempo e sim de Percentil. 
+
+Percentil é algo matemático e está ligado a porcentagens, com exemplo fica mais claro:
+0.1 percentil = 10%
+0.5 percentil = 50%
+0.9 percentil = 90%
+
+Então quando eu coloco um quantile com o valor percentil de 0.5, eu estou definindo que eu quero saber o resultado de 50% das minhas requisições,
+se eu tiver um resutaldo de 2ms eu sei que 50% das minhas requisições estão abaixo deste valor.

@@ -1,0 +1,222 @@
+# // Descomplicando o Prometheus \\
+
+Este documento tem como objeto de auxiliar a executar a instalação do Prometheus em ambientes Linux.
+Aqui os passos serão realizados baseados nas distribuições Debian, então alguns comandos podem mudar caso use outras como redhat e etc..
+
+
+
+# // Passo 1 - Efetuar o Download  do Prometheus
+
+Para isto teremos que ir na fonte, o site oficial da solução na seção de downloads: https://prometheus.io/download/
+Aqui teremos diversão opções incluindo imagens Docker, neste exemplo vamos pelo exemplo tradicional.
+
+Dentro do terminal do seu servidor execute:
+curl -LO https://github.com/prometheus/prometheus/releases/download/v2.38.0/prometheus-2.38.0.linux-amd64.tar.gz
+# Efetua o download do arquivos 
+
+Depois de concluído, temos que descompactar estes arquivos para exploramos seu conteúdo:
+tar -xvf prometheus-2.38.0.linux-amd64.tar.gz
+# efetua a descompactação do pacote
+
+
+
+# // Passo 2 - Direcionar os arquivos para os locais corretos
+
+Agora vamos entrar no diretório criado: 
+cd prometheus-2.38.0.linux-amd64/
+
+Aqui vamos perceber que temos subdiretórios e binários que devemos mover para os locais adequados para o Prometheus funcionar corretamente:
+mv prometheus /usr/local/bin/
+mv promtool /usr/local/bin/
+#Movemos os binários para o local padrão de binário do usuário
+
+mkdir /etc/prometheus
+mv prometheus.yml /etc/prometheus/
+#Criamos o diretório padrão aonde contem toda configuração do Prometheus e seu yml com os parametros necessários
+
+mv console_libraries/ /etc/prometheus/
+mv consoles /etc/prometheus
+#Movemos os diretórios de consoles para dentro do diretório de configuração do Prometheus
+
+mkdir /var/lib/prometheus
+#Criamos o local aonde o Prometheus irá guardar seus dados
+
+
+
+# // Passo 3 - Criação do user Prometheus
+
+Para que o prometheus execute corretamente, temos que criar um user para o serviço e dar permissões para que ele acesse os arquivos.
+Vamos fazer isto agora:
+
+addgroup --system prometheus
+#Primeiro criamos o grupo de usuário
+adduser --shell /sbin/nologin --system --group prometheus
+#Depois o user
+
+chown -R prometheus:prometheus /etc/prometheus/
+chown -R prometheus:prometheus /var/lib/prometheus/
+chown -R prometheus:prometheus /var/log/prometheus
+chown -R prometheus:prometheus /usr/local/bin/prometheus
+chown -R prometheus:prometheus /usr/local/bin/promtool
+#Demos permissões a todos os binários e diretórios para o Grupo/User Prometheus
+
+
+
+# // Passo 4 - Configuração inicial e criação do serviço Prometheus
+
+Vamos começar editando o arquivo de configuração padrão do Prometheus, deixando apenas o necessário:
+vim /etc/prometheus/prometheus.yml
+
+Agora vamos limpar o execesso e deixar basicamente conforme o modelo abaixo:
+
+----------------
+
+global: 
+
+  scrape_interval: 15s 
+  # Intervalo de coleta dos dados, ou seja, a cada 15 segundos o Prometheus vai até o alvo monitorado coletar as métricas, o padrão é 1 minuto.
+  
+  evaluation_interval: 15s 
+  # Intervalo para o Prometheus avaliar as regras de alerta, o padrão é 1 minuto. Não estamos utilizando regras para os alertas, vamos manter aqui somente para referência.
+
+  scrape_timeout: 10s 
+  # Intervalos para o Prometheus aguardar o alvo monitorado responder antes de considerar que o alvo está indisponível, o padrão é 10 segundos.
+
+rule_files: 
+# Inicio da definição das regras de alerta, nesse primeiro exemplo vamos deixar sem regras, pois não iremos utilizar alertas por agora.
+
+scrape_configs: 
+# Inicio da definição das configurações de coleta, ou seja, como o Prometheus vai coletar as métricas e onde ele vai encontrar essas métricas.
+
+  - job_name: "prometheus" 
+  # Nome do job, ou seja, o nome do serviço que o Prometheus vai monitorar.
+
+    static_configs: 
+	# Inicio da definição das configurações estáticas, ou seja, configurações que não serão alteradas durante o processo de coleta.
+
+      - targets: ["localhost:9090"] 
+	  # Endereço do alvo monitorado, ou seja, o endereço do serviço que o Prometheus vai monitorar. Nesse caso é o próprio Prometheus.
+	  
+-----------------
+
+
+Agora iremos criar o arquivo que permitirá o Prometheus seja iniciado como um serviço no SystemD:
+
+vim /etc/systemd/system/prometheus.service
+
+Crie o serviço conforme o modelo abaixo:
+
+----------------
+
+[Unit] 
+# Inicio da definição do serviço.
+
+Description=Prometheus 
+# Descrição do serviço.
+Documentation=https://prometheus.io/docs/introduction/overview/ 
+# Documentação do serviço.
+Wants=network-online.target 
+# Para que o serviço do Prometheus seja iniciado, precisamos antes que o serviço de rede esteja ativo.
+After=network-online.target 
+# Depois que o serviço de rede esteja ativo, o serviço do Prometheus será iniciado.
+
+[Service] 
+# Inicio da definição do serviço.
+
+Type=simple 
+# Tipo do serviço, o padrão é simple, ou seja, o serviço é simples, não tem subserviços.
+User=prometheus 
+# Usuário do serviço, o padrão é prometheus, o mesmo que criamos no passo anterior.
+Group=prometheus 
+# Grupo do serviço, o padrão é prometheus, o mesmo que criamos no passo anterior.
+ExecReload=/bin/kill -HUP \$MAINPID 
+# Comando para o serviço do Prometheus ser reiniciado, o padrão é /bin/kill -HUP \$MAINPID, ou seja, o serviço do Prometheus será reiniciado ao receber um sinal de reinicialização.
+ExecStart=/usr/local/bin/prometheus \ 
+# Comando para o serviço do Prometheus ser iniciado, o padrão é /usr/local/bin/prometheus, o mesmo lugar para onde mandamos o binário do Prometheus no passo anterior.
+  --config.file=/etc/prometheus/prometheus.yml \ 
+  # Arquivo de configuração do serviço do Prometheus, o padrão é /etc/prometheus/prometheus.yml, o mesmo lugar onde mandamos o arquivo de configuração do Prometheus no passo anterior.
+  --storage.tsdb.path=/var/lib/prometheus \ 
+  # Diretório onde o serviço do Prometheus vai armazenar seus dados, o padrão é /var/lib/prometheus, o mesmo lugar onde criamos o diretório para armazenar os dados do Prometheus.
+  --web.console.templates=/etc/prometheus/consoles \ 
+  # Diretório onde o serviço do Prometheus vai encontrar os templates para os consoles, o padrão é /etc/prometheus/consoles, o mesmo lugar para onde movemos o diretório para armazenar os templates dos consoles.
+  --web.console.libraries=/etc/prometheus/console_libraries \ 
+  # Diretório onde o serviço do Prometheus vai encontrar as bibliotecas para os consoles, o padrão é /etc/prometheus/console_libraries, o mesmo lugar para onde movemos o diretório para armazenar as bibliotecas dos consoles.
+  --web.listen-address=0.0.0.0:9090 \ 
+  # Endereço do serviço do Prometheus, o padrão é o serviço escutar na porta 9090.
+  --web.external-url= 
+  # Endereço externo do serviço do Prometheus, por exemplo o endereço DNS do serviço.
+
+SyslogIdentifier=prometheus 
+# Identificador do serviço no syslog, o padrão é prometheus.
+Restart=always 
+# Reinicialização do serviço, o padrão é always, ou seja, o serviço será reiniciado sempre que ocorrer alguma alteração.
+
+[Install] 
+# Inicio da definição do instalador do serviço.
+
+WantedBy=multi-user.target 
+# Definir em qual grupo o serviço será iniciado, o padrão é multi-user.target.
+
+----------------
+
+Agora com tudo pronto podemos iniciar o serviço:
+systemctl daemon-reload
+#Temos que iniciar que reiniciar o Daemon para que ele identifique o novo serviço que criamos
+systemctl start prometheus.service
+#Iniciando o serviço do Prometheus
+systemctl enable prometheus.service
+#Habilitando que o serviço seja iniciado automáticamente junto com o Sistema
+systemctl status prometheus.service
+#Verificando se o está o rodando ok
+
+Caso o serviço esteja com problema é recomendado verificar os logs e tentar identificar o problema e refazer o passo a passo
+journalctl -u prometheus.service
+
+
+
+# // Passo 5 - Bem vindo ao Prometheus
+
+Agora basta acessar o endereço abaixo para ter acesso a interface web do Prometheus
+http://localhost:9090
+
+Parabéns!
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ sudo addgroup --system prometheus
+   21  adduser --shell /sbin/nologin --system --group prometheus
+   22  vim /etc/systemd/system/prometheus.service
+   23  rm /etc/systemd/system/prometheus.service
+   24  vim /etc/systemd/system/prometheus.service
+   25  systemctl daemon-reload
+   26  systemctl start prometheus.service
+   27  systemctl status prometheus.service
+   28  journalctl -u prometheus.service
+   29  vim /etc/prometheus/prometheus.yml
+   30  chown - R prometheus:prometheus /etc/prometheus/
+   31  chown -R prometheus:prometheus /etc/prometheus/
+   32  chown -R prometheus:prometheus /var/lib/prometheus/
+   33  chown -R prometheus:prometheus /usr/local/bin/prometheus
+   34  chown -R prometheus:prometheus /usr/local/bin/promtool
+
